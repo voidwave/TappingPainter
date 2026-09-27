@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Tap Painter</title>
+  <meta name="description" content="A relaxing tap-to-paint colour-by-number game.">
+  <meta name="theme-color" content="#16151b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tap Painter">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="app">
+    <!-- Gallery -->
+    <section id="gallery" class="screen active">
+      <header class="gal-header">
+        <div>
+          <h1>Tap Painter</h1>
+          <p>Breathe. Tap. Paint.</p>
+        </div>
+        <div class="hint-pill" title="Hints"><span class="bulb">💡</span><span id="galHints">10</span></div>
+      </header>
+      <div id="grid" class="grid"></div>
+      <footer class="gal-footer">Tap a number’s colour below the picture, then tap matching areas. Pinch to zoom, drag to move, press and hold then slide to paint many at once.</footer>
+    </section>
+
+    <!-- Painting -->
+    <section id="game" class="screen">
+      <div class="topbar">
+        <button id="backBtn" class="icon-btn" aria-label="Back to gallery">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="title-wrap">
+          <span id="gameTitle" class="game-title"></span>
+          <div class="progress"><div class="bar"><div id="progFill"></div></div><span id="progText">0%</span></div>
+        </div>
+        <button id="soundBtn" class="icon-btn" aria-label="Toggle sound">
+          <svg class="on" viewBox="0 0 24 24" width="22" height="22"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <svg class="off" viewBox="0 0 24 24" width="22" height="22"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <button id="hintBtn" class="hint-btn" aria-label="Use a hint"><span class="bulb">💡</span><span id="hintCount" class="count">0</span></button>
+      </div>
+
+      <div id="stage">
+        <canvas id="canvas"></canvas>
+        <button id="fitBtn" class="icon-btn fit" aria-label="Show whole picture">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div id="loading" class="loading">
+          <div class="spinner"></div>
+          <p>Preparing your canvas…</p>
+        </div>
+      </div>
+
+      <div class="bottombar">
+        <div id="palette" class="palette"></div>
+      </div>
+
+      <div id="done" class="done-sheet">
+        <h2>Beautiful!</h2>
+        <p>You finished this painting. Take a moment to enjoy it.</p>
+        <div class="done-actions">
+          <button id="replayBtn" class="btn">▶ Replay</button>
+          <button id="saveImgBtn" class="btn">Save image</button>
+          <button id="galleryBtn" class="btn primary">Gallery</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Import dialog -->
+    <div id="importDialog" class="overlay">
+      <div class="dialog">
+        <img id="importPreview" alt="Selected photo">
+        <label class="field">Name<input id="importTitle" maxlength="40" autocomplete="off"></label>
+        <p class="dialog-label">How detailed should it be?</p>
+        <div class="diff">
+          <button class="btn" data-difficulty="relaxed"><b>Relaxed</b><small>12 colours · big areas</small></button>
+          <button class="btn primary" data-difficulty="balanced"><b>Balanced</b><small>20 colours</small></button>
+          <button class="btn" data-difficulty="detailed"><b>Detailed</b><small>30 colours · fine areas</small></button>
+        </div>
+        <button class="link" data-cancel>Cancel</button>
+      </div>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <script src="js/storage.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/processor.js"></script>
+  <script src="js/artworks.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

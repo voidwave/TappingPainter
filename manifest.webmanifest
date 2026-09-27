@@ -1,0 +1,12 @@
+{
+  "name": "Tap Painter",
+  "short_name": "Tap Painter",
+  "description": "A relaxing tap-to-paint colour-by-number game.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#16151b",
+  "theme_color": "#16151b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
