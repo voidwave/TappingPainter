@@ -12,7 +12,10 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 ```
 
 (Opening `index.html` straight from disk won't work. Browsers block reading the
-pixels of local image files.) It also works as is on GitHub Pages. On iPad or
+pixels of local image files.)
+
+It's published on GitHub Pages at **https://voidwave.github.io/TappingPainter/**,
+and every push to the default branch redeploys it automatically. On iPad or
 iPhone, open it in Safari and choose **Share → Add to Home Screen** to run it
 full-screen like an app.
 
