@@ -11,7 +11,7 @@
  */
 const DITHER_DEFAULTS = {
   enabled: true,
-  pattern: 'bayer',  // 'bayer' (ordered, classic) or 'noise' (soft, organic)
+  pattern: 'noise',  // 'noise' (soft, organic) or 'bayer' (ordered, classic)
   band: 14,          // fade width, in picture pixels
   minAlpha: 0.35,    // opacity right at an edge that faces an unpainted tile
   dot: 1,            // dither dot size, in hi-res pixels

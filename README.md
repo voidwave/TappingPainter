@@ -69,7 +69,7 @@ built-in defaults are in `DITHER_DEFAULTS` in `js/dither.js`.
 | File | Purpose |
 | --- | --- |
 | `js/processor.js` | Turns an image into a puzzle. A painterly Kuwahara filter smooths it, k-means in Lab colour space picks the palette, small or thin areas merge into their neighbours, a distance transform places the numbers, and region borders are traced into shared, smoothed vector outlines. Runs in a Web Worker. |
-| `js/dither.js` | Soft edge dithering: distance from each painted pixel to the nearest unpainted tile becomes an ordered-dither fade, updated incrementally around each tap |
+| `js/dither.js` | Soft edge dithering: distance from each painted pixel to the nearest unpainted tile becomes a soft noise-dither fade, updated incrementally around each tap |
 | `js/game.js` | Painting screen: vector rendering, pan/zoom, taps, reveal animation, hints, replay |
 | `js/app.js` | Gallery, detail levels, photo import, screen switching |
 | `js/gallery-data.js` | Generated picture list (see *Adding pictures*) |
