@@ -1,7 +1,14 @@
 /*
  * The painting screen: canvas rendering, pan / pinch-zoom, tap-to-fill,
  * palette, hints, saving and the finish celebration.
+ *
+ * Rendering is vector based: every region has a smoothed outline (Path2D).
+ * Painted regions reveal the high-resolution picture through those paths; outlines, highlights and numbers are
+ * drawn fresh at screen resolution each frame, so they stay crisp at any zoom.
  */
+const HIGHLIGHT = '#d9d5df';
+const MAX_HI_PIXELS = 4.2e6;
+
 class Game {
   constructor(el, callbacks) {
     this.el = el;
@@ -63,35 +70,35 @@ class Game {
 
     let data = this.cache.get(entry.id);
     if (!data) {
-      const srcCanvas = await entry.loadSource();
-      const sctx = srcCanvas.getContext('2d');
-      const src = sctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
-      const puzzle = await PuzzleProcessor.process(src, entry.opts);
-      data = { puzzle, src };
+      const src = await entry.loadSource();
+      const base = src.base;
+      const baseData = base.getContext('2d').getImageData(0, 0, base.width, base.height);
+      const hi = src.hi(MAX_HI_PIXELS);
+      const puzzle = await PuzzleProcessor.process(baseData, entry.opts);
+      data = { puzzle, hi };
+      // hi-res images are big: keep only the two most recent pictures around
       this.cache.set(entry.id, data);
+      while (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value);
     }
     if (this.entry !== entry) return; // user left while we were processing
-    this.setup(data.puzzle, data.src);
+    this.setup(data.puzzle, data.hi);
     this.loadingEl.classList.remove('show');
   }
 
-  setup(puzzle, src) {
+  setup(puzzle, hi) {
     this.puzzle = puzzle;
-    this.src = src.data;
+    this.hi = hi;
     const { width: w, height: h, regionCount: R, labels, regionColor, palette } = puzzle;
     this.w = w; this.h = h;
+    this.K = hi.width / w;
 
-    // boundary map: a pixel is an outline pixel if a 4-neighbour differs
-    const b = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const p = y * w + x, l = labels[p];
-        if ((x > 0 && labels[p - 1] !== l) || (x < w - 1 && labels[p + 1] !== l) ||
-          (y > 0 && labels[p - w] !== l) || (y < h - 1 && labels[p + w] !== l)) b[p] = 1;
-      }
-    }
-    this.boundary = b;
-    this.lineColors = palette.map(c => c.map(v => Math.round(v * 0.45 + 150 * 0.55)));
+    this.paths = new Array(R);
+    this.lineCss = palette.map(c => {
+      const m = c.map(v => Math.round(v * 0.45 + 150 * 0.55));
+      return `rgb(${m[0]},${m[1]},${m[2]})`;
+    });
+    this.colorRegions = palette.map(() => []);
+    for (let r = 0; r < R; r++) this.colorRegions[regionColor[r]].push(r);
 
     this.painted = new Uint8Array(R);
     this.order = [];
@@ -113,82 +120,67 @@ class Game {
     }
 
     this.layer = document.createElement('canvas');
-    this.layer.width = w; this.layer.height = h;
+    this.layer.width = hi.width; this.layer.height = hi.height;
     this.layerCtx = this.layer.getContext('2d');
-    this.layerImg = this.layerCtx.createImageData(w, h);
-    this.layerData = this.layerImg.data;
+    this.pattern = this.layerCtx.createPattern(hi, 'no-repeat');
+    this.clearLayer();
+    if (this.isComplete()) this.layerCtx.drawImage(hi, 0, 0);
+    else for (const r of this.order) this.paintRegion(r);
 
-    this.selected = -1;
-    const first = this.nextColor(-1);
-    this.selected = first;
-    this.renderAll();
+    this.selected = this.nextColor(-1);
     this.buildPalette();
     this.updateProgress();
     this.view = this.fitView();
     this.clampView();
-    if (this.isComplete()) this.showDone(false);
+    if (this.isComplete()) this.showDone();
     this.draw();
   }
 
   // ---------------------------------------------------------------- rendering
-  renderAll() {
-    for (let r = 0; r < this.puzzle.regionCount; r++) this.renderRegion(r, null);
-    this.layerCtx.putImageData(this.layerImg, 0, 0);
-  }
-
-  // Writes one region into the layer. anim = {x, y, rad} limits the painted
-  // part to a growing circle (the reveal animation).
-  renderRegion(r, anim, forceBlank) {
-    const P = this.puzzle, d = this.layerData, src = this.src, b = this.boundary, w = this.w;
-    const col = P.regionColor[r];
-    const painted = this.painted[r] && !forceBlank;
-    const hl = !painted && col === this.selected;
-    const lc = this.lineColors[col];
-    const start = P.regionStart[r], end = P.regionStart[r + 1], pix = P.regionPix;
-    const r2 = anim ? anim.rad * anim.rad : 0;
-    for (let i = start; i < end; i++) {
-      const p = pix[i], o = p * 4;
-      let show = painted;
-      if (show && anim) {
-        const x = p % w, y = (p - x) / w;
-        const dx = x - anim.x, dy = y - anim.y;
-        show = dx * dx + dy * dy <= r2;
-      }
-      if (show) {
-        d[o] = src[o]; d[o + 1] = src[o + 1]; d[o + 2] = src[o + 2];
-      } else if (b[p]) {
-        d[o] = lc[0]; d[o + 1] = lc[1]; d[o + 2] = lc[2];
-      } else if (hl) {
-        const x = p % w, y = (p - x) / w;
-        const v = ((x >> 2) + (y >> 2)) & 1 ? 204 : 222;
-        d[o] = v; d[o + 1] = v - 2; d[o + 2] = v + 4;
-      } else {
-        d[o] = 255; d[o + 1] = 255; d[o + 2] = 255;
-      }
-      d[o + 3] = 255;
+  // Smoothed outline of a region, in hi-res layer coordinates
+  path(r) {
+    let p = this.paths[r];
+    if (p) return p;
+    const P = this.puzzle, pts = P.contourPts, K = this.K;
+    p = new Path2D();
+    for (let l = P.regionLoops[r]; l < P.regionLoops[r + 1]; l++) {
+      const s = P.loopStart[l], e = P.loopStart[l + 1];
+      if (e - s < 2) continue;
+      p.moveTo(pts[s * 2] * K, pts[s * 2 + 1] * K);
+      for (let i = s + 1; i < e; i++) p.lineTo(pts[i * 2] * K, pts[i * 2 + 1] * K);
+      p.closePath();
     }
+    this.paths[r] = p;
+    return p;
   }
 
-  flushRegion(r) {
-    const bb = this.puzzle.regionBBox, o = r * 4;
-    const x0 = bb[o], y0 = bb[o + 1];
-    this.layerCtx.putImageData(this.layerImg, 0, 0, x0, y0, bb[o + 2] - x0 + 1, bb[o + 3] - y0 + 1);
+  clearLayer() {
+    this.layerCtx.fillStyle = '#ffffff';
+    this.layerCtx.fillRect(0, 0, this.layer.width, this.layer.height);
   }
 
-  renderColor(col) {
-    if (col < 0) return;
-    const P = this.puzzle;
-    let x0 = this.w, y0 = this.h, x1 = -1, y1 = -1;
-    for (let r = 0; r < P.regionCount; r++) {
-      if (P.regionColor[r] !== col || this.painted[r]) continue;
-      this.renderRegion(r, null);
-      const o = r * 4, bb = P.regionBBox;
-      if (bb[o] < x0) x0 = bb[o];
-      if (bb[o + 1] < y0) y0 = bb[o + 1];
-      if (bb[o + 2] > x1) x1 = bb[o + 2];
-      if (bb[o + 3] > y1) y1 = bb[o + 3];
-    }
-    if (x1 >= 0) this.layerCtx.putImageData(this.layerImg, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  // Reveal a region of the hi-res picture. The thin stroke overlaps the
+  // neighbours slightly so two painted regions never show a hairline seam.
+  paintRegion(r) {
+    const c = this.layerCtx, p = this.path(r);
+    c.fillStyle = this.pattern;
+    c.fill(p, 'evenodd');
+    c.strokeStyle = this.pattern;
+    c.lineWidth = 1;
+    c.lineJoin = 'round';
+    c.stroke(p);
+  }
+
+  // Part of the reveal animation: only inside a growing circle
+  paintPartial(r, x, y, rad) {
+    const c = this.layerCtx, K = this.K;
+    c.save();
+    c.beginPath();
+    c.arc(x * K, y * K, rad * K, 0, Math.PI * 2);
+    c.clip();
+    c.fillStyle = this.pattern;
+    c.fill(this.path(r), 'evenodd');
+    c.restore();
   }
 
   resize() {
@@ -234,7 +226,7 @@ class Game {
   }
 
   frame(now) {
-    let again = this.step(now);
+    const again = this.step(now);
     const ctx = this.ctx, dpr = this.dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.vw, this.vh);
@@ -252,10 +244,13 @@ class Game {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this.layer, v.tx, v.ty, this.w * v.s, this.h * v.s);
 
-    if (!this.timelapse) this.drawNumbers(now);
+    if (!this.timelapse) {
+      this.drawOutlines(v);
+      this.drawNumbers(now);
+    }
 
     for (const rp of this.ripples) {
-      const t = (now - rp.start) / 600;
+      const t = Math.max(0, (now - rp.start) / 600);
       ctx.strokeStyle = `rgba(${rp.c[0]},${rp.c[1]},${rp.c[2]},${(1 - t) * 0.8})`;
       ctx.lineWidth = 3 * (1 - t) + 1;
       ctx.beginPath();
@@ -282,12 +277,39 @@ class Game {
     if (again) this.draw();
   }
 
+  // Highlight + outlines of the unpainted regions that are on screen
+  drawOutlines(v) {
+    const ctx = this.ctx, P = this.puzzle, bb = P.regionBBox, K = this.K;
+    const m = this.dpr * v.s / K;
+    ctx.setTransform(m, 0, 0, m, this.dpr * v.tx, this.dpr * v.ty);
+    const x0 = -v.tx / v.s, y0 = -v.ty / v.s, x1 = (this.vw - v.tx) / v.s, y1 = (this.vh - v.ty) / v.s;
+    const visible = r => {
+      const o = r * 4;
+      return bb[o + 2] + 1 >= x0 && bb[o] <= x1 && bb[o + 3] + 1 >= y0 && bb[o + 1] <= y1;
+    };
+    if (this.selected >= 0) {
+      ctx.fillStyle = HIGHLIGHT;
+      for (const r of this.colorRegions[this.selected]) {
+        if (!this.painted[r] && visible(r)) ctx.fill(this.path(r), 'evenodd');
+      }
+    }
+    ctx.lineWidth = 1.15 * K / v.s;
+    ctx.lineJoin = 'round';
+    for (let c = 0; c < this.colorRegions.length; c++) {
+      ctx.strokeStyle = this.lineCss[c];
+      for (const r of this.colorRegions[c]) {
+        if (!this.painted[r] && visible(r)) ctx.stroke(this.path(r));
+      }
+    }
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+  }
+
   // advances animations; returns true while anything is still moving
   step(now) {
     let active = false;
     if (this.viewAnim) {
       const a = this.viewAnim;
-      let t = Math.min(1, (now - a.start) / a.dur);
+      const t = Math.min(1, (now - a.start) / a.dur);
       const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       const s = Math.exp(Math.log(a.from.s) + (Math.log(a.to.s) - Math.log(a.from.s)) * e);
       const cx = a.fc.x + (a.tc.x - a.fc.x) * e, cy = a.fc.y + (a.tc.y - a.fc.y) * e;
@@ -297,11 +319,14 @@ class Game {
     if (this.anims.length) {
       const keep = [];
       for (const an of this.anims) {
-        const t = Math.min(1, (now - an.start) / an.dur);
-        const e = 1 - Math.pow(1 - t, 3);
-        this.renderRegion(an.r, t >= 1 ? null : { x: an.x, y: an.y, rad: an.maxR * e });
-        this.flushRegion(an.r);
-        if (t < 1) keep.push(an);
+        // rAF timestamps can be slightly older than the tap's performance.now()
+        const t = Math.max(0, Math.min(1, (now - an.start) / an.dur));
+        if (t >= 1) {
+          this.paintRegion(an.r);
+        } else {
+          this.paintPartial(an.r, an.x, an.y, an.maxR * (1 - Math.pow(1 - t, 3)));
+          keep.push(an);
+        }
       }
       this.anims = keep;
       active = active || keep.length > 0;
@@ -327,7 +352,7 @@ class Game {
     return active;
   }
 
-  drawNumbers(now) {
+  drawNumbers() {
     const ctx = this.ctx, v = this.view, P = this.puzzle, L = P.regionLabel;
     const fontCache = this._fontCache || (this._fontCache = {});
     ctx.textAlign = 'center';
@@ -518,10 +543,10 @@ class Game {
     const col = P.regionColor[r];
     this.colorDone[col]++;
     const far = Math.max(
-      Math.hypot(bb[o] - mx, bb[o + 1] - my), Math.hypot(bb[o + 2] - mx, bb[o + 1] - my),
-      Math.hypot(bb[o] - mx, bb[o + 3] - my), Math.hypot(bb[o + 2] - mx, bb[o + 3] - my)) + 2;
+      Math.hypot(bb[o] - mx, bb[o + 1] - my), Math.hypot(bb[o + 2] + 1 - mx, bb[o + 1] - my),
+      Math.hypot(bb[o] - mx, bb[o + 3] + 1 - my), Math.hypot(bb[o + 2] + 1 - mx, bb[o + 3] + 1 - my)) + 2;
     const now = performance.now();
-    this.anims.push({ r, x: mx, y: my, maxR: far, start: now, dur: Math.min(700, 260 + far * 1.2) });
+    this.anims.push({ r, x: mx + 0.5, y: my + 0.5, maxR: far, start: now, dur: Math.min(700, 260 + far * 1.2) });
     this.ripples.push({ x: sx, y: sy, start: now, c: P.palette[col] });
     Sound.fill();
     this.updateSwatch(col);
@@ -533,7 +558,7 @@ class Game {
       this.updateHints();
       if (this.isComplete()) {
         this.selected = -1;
-        setTimeout(() => this.finish(), 700);
+        setTimeout(() => this.finish(), 800);
       } else {
         this.select(this.nextColor(col));
       }
@@ -554,10 +579,7 @@ class Game {
 
   select(col) {
     if (col === this.selected) return;
-    const old = this.selected;
     this.selected = col;
-    this.renderColor(old);
-    this.renderColor(col);
     for (const sw of this.paletteEl.children) sw.classList.toggle('selected', +sw.dataset.color === col);
     const sw = this.paletteEl.querySelector(`[data-color="${col}"]`);
     if (sw) sw.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -649,7 +671,7 @@ class Game {
     clearTimeout(this.saveTimer);
     const P = this.puzzle, L = P.regionLabel, w = this.w;
     const pts = this.order.map(r => Math.floor(L[r * 3 + 1]) * w + Math.floor(L[r * 3]));
-    Store.saveProgress(this.entry.id, { v: 1, pts });
+    Store.saveProgress(this.entry.id, { v: 2, pts });
     const pct = Math.floor(100 * this.order.length / P.regionCount);
     Store.saveMeta(this.entry.id, { pct, done: this.isComplete() });
     if (withThumb) Store.saveThumb(this.entry.id, this.thumbnail());
@@ -658,11 +680,18 @@ class Game {
   thumbnail() {
     const size = 320;
     const c = document.createElement('canvas');
-    const k = size / Math.max(this.w, this.h);
-    c.width = Math.round(this.w * k); c.height = Math.round(this.h * k);
+    const k = size / Math.max(this.layer.width, this.layer.height);
+    c.width = Math.round(this.layer.width * k); c.height = Math.round(this.layer.height * k);
     const ctx = c.getContext('2d');
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this.layer, 0, 0, c.width, c.height);
+    // faint outlines so an unfinished thumbnail still reads as a picture
+    if (!this.isComplete()) {
+      ctx.setTransform(c.width / this.layer.width, 0, 0, c.height / this.layer.height, 0, 0);
+      ctx.lineWidth = this.layer.width / c.width * 0.6;
+      ctx.strokeStyle = 'rgba(120,115,130,0.55)';
+      for (let r = 0; r < this.puzzle.regionCount; r++) if (!this.painted[r]) ctx.stroke(this.path(r));
+    }
     return c.toDataURL('image/jpeg', 0.82);
   }
 
@@ -676,13 +705,16 @@ class Game {
 
   // ----------------------------------------------------------------- finish
   finish() {
+    // swap in the whole picture: seamless, with every tiny detail
+    this.anims = [];
+    this.layerCtx.drawImage(this.hi, 0, 0);
     this.save(true);
     Store.setHints(Store.hints() + 3);
     this.updateHints();
     Sound.finished();
     this.animateViewTo(this.fitView());
     this.spawnPetals();
-    setTimeout(() => this.showDone(true), 900);
+    setTimeout(() => this.showDone(), 900);
   }
 
   showDone() {
@@ -721,8 +753,7 @@ class Game {
     if (!this.puzzle) return;
     this.doneEl.classList.remove('show');
     this.petals = [];
-    for (let r = 0; r < this.puzzle.regionCount; r++) this.renderRegion(r, null, true);
-    this.layerCtx.putImageData(this.layerImg, 0, 0);
+    this.clearLayer();
     const total = this.order.length;
     this.timelapse = { i: 0, start: performance.now(), dur: Math.min(9000, Math.max(3000, total * 30)) };
     this.view = this.fitView();
@@ -732,11 +763,10 @@ class Game {
   stepTimelapse(now) {
     const tl = this.timelapse;
     const target = Math.min(this.order.length, Math.ceil(this.order.length * (now - tl.start) / tl.dur));
-    if (target <= tl.i) return;
-    for (; tl.i < target; tl.i++) this.renderRegion(this.order[tl.i], null);
-    this.layerCtx.putImageData(this.layerImg, 0, 0);
+    for (; tl.i < target; tl.i++) this.paintRegion(this.order[tl.i]);
     if (tl.i >= this.order.length) {
       this.timelapse = null;
+      this.layerCtx.drawImage(this.hi, 0, 0);
       setTimeout(() => { if (this.puzzle && this.isComplete()) this.showDone(); }, 600);
     }
   }

@@ -26,8 +26,15 @@
         </div>
         <div class="hint-pill" title="Hints"><span class="bulb">💡</span><span id="galHints">10</span></div>
       </header>
+      <div class="toolbar">
+        <div id="difficulty" class="segmented" role="group" aria-label="Detail level">
+          <button data-difficulty="relaxed">Relaxed</button>
+          <button data-difficulty="balanced">Balanced</button>
+          <button data-difficulty="detailed">Detailed</button>
+        </div>
+      </div>
       <div id="grid" class="grid"></div>
-      <footer class="gal-footer">Tap a number’s colour below the picture, then tap matching areas. Pinch to zoom, drag to move, press and hold then slide to paint many at once.</footer>
+      <footer class="gal-footer">Pick a colour below the picture, then tap the areas with its number. Pinch to zoom, drag to move, press and hold then slide to paint many at once.</footer>
     </section>
 
     <!-- Painting -->
@@ -78,12 +85,8 @@
       <div class="dialog">
         <img id="importPreview" alt="Selected photo">
         <label class="field">Name<input id="importTitle" maxlength="40" autocomplete="off"></label>
-        <p class="dialog-label">How detailed should it be?</p>
-        <div class="diff">
-          <button class="btn" data-difficulty="relaxed"><b>Relaxed</b><small>12 colours · big areas</small></button>
-          <button class="btn primary" data-difficulty="balanced"><b>Balanced</b><small>20 colours</small></button>
-          <button class="btn" data-difficulty="detailed"><b>Detailed</b><small>30 colours · fine areas</small></button>
-        </div>
+        <p class="dialog-label">Detail level: <b id="importDiff">Balanced</b> (change it on the gallery screen)</p>
+        <button class="btn primary" data-start>Start painting</button>
         <button class="link" data-cancel>Cancel</button>
       </div>
     </div>
@@ -95,7 +98,7 @@
   <script src="js/storage.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/processor.js"></script>
-  <script src="js/artworks.js"></script>
+  <script src="js/gallery-data.js"></script>
   <script src="js/game.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -2,11 +2,14 @@
 (function () {
   'use strict';
 
+  // size = working resolution (long side); minArea / minThick keep every
+  // region big enough for a readable number (no fiddly tiny areas)
   const DIFFICULTY = {
-    relaxed: { label: 'Relaxed', size: 600, colors: 12, minArea: 110, minThick: 3 },
-    balanced: { label: 'Balanced', size: 800, colors: 20, minArea: 70, minThick: 2.5 },
-    detailed: { label: 'Detailed', size: 1000, colors: 30, minArea: 45, minThick: 2 },
+    relaxed: { label: 'Relaxed', size: 700, colors: 14, minArea: 700, minThick: 8 },
+    balanced: { label: 'Balanced', size: 900, colors: 22, minArea: 450, minThick: 6 },
+    detailed: { label: 'Detailed', size: 1100, colors: 32, minArea: 260, minThick: 4.5 },
   };
+  const MAX_IMPORT_SIDE = 1600; // imported photos live in localStorage
 
   const $ = sel => document.querySelector(sel);
   const galleryEl = $('#gallery');
@@ -15,6 +18,7 @@
   const toastEl = $('#toast');
   const importDialog = $('#importDialog');
   const fileInput = $('#fileInput');
+  const diffEl = $('#difficulty');
 
   let toastTimer = 0;
   function toast(msg) {
@@ -30,6 +34,9 @@
   });
   window.tapPainter = { game };
 
+  let difficulty = Store.get('difficulty', 'balanced');
+  if (!DIFFICULTY[difficulty]) difficulty = 'balanced';
+
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -39,11 +46,13 @@
     });
   }
 
-  function scaledCanvas(img, longSide) {
-    const k = Math.min(1, longSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+  // Draws img into a new canvas scaled by k (never upscaled)
+  function canvasAt(img, k) {
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    k = Math.min(1, k);
     const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round((img.naturalWidth || img.width) * k));
-    c.height = Math.max(1, Math.round((img.naturalHeight || img.height) * k));
+    c.width = Math.max(1, Math.round(iw * k));
+    c.height = Math.max(1, Math.round(ih * k));
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
@@ -51,45 +60,36 @@
     ctx.drawImage(img, 0, 0, c.width, c.height);
     return c;
   }
+  const longSide = img => Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+  const pixels = img => (img.naturalWidth || img.width) * (img.naturalHeight || img.height);
 
   // ------------------------------------------------------------- entries
-  const previewCache = new Map();
-  function builtinEntries() {
-    return Artworks.list.map(art => ({
-      id: 'art-' + art.id,
-      title: art.title,
-      builtin: true,
-      loadSource: async () => Artworks.render(art),
-      preview: () => {
-        if (!previewCache.has(art.id)) {
-          const full = Artworks.render(art);
-          previewCache.set(art.id, scaledCanvas(full, 320).toDataURL('image/jpeg', 0.8));
-        }
-        return previewCache.get(art.id);
+  function makeEntry(pic, builtin) {
+    const d = DIFFICULTY[difficulty];
+    return {
+      id: pic.id + '@' + difficulty,
+      title: pic.title,
+      builtin,
+      thumb: pic.thumb,
+      async loadSource() {
+        const img = await loadImage(pic.src);
+        return {
+          base: canvasAt(img, d.size / longSide(img)),
+          hi: maxPixels => canvasAt(img, Math.sqrt(maxPixels / pixels(img))),
+        };
       },
-      opts: { palette: Artworks.palette(art), minArea: 30, minThick: 2 },
-    }));
+      opts: { colors: d.colors, minArea: d.minArea, minThick: d.minThick },
+    };
   }
 
-  function importEntries() {
-    return Store.imports().map(imp => {
-      const d = DIFFICULTY[imp.difficulty] || DIFFICULTY.balanced;
-      return {
-        id: imp.id,
-        title: imp.title,
-        builtin: false,
-        loadSource: async () => scaledCanvas(await loadImage(imp.dataUrl), d.size),
-        preview: () => imp.dataUrl,
-        opts: { colors: d.colors, minArea: d.minArea, minThick: d.minThick, smooth: true },
-        difficulty: d.label,
-      };
-    });
-  }
+  const galleryPictures = () => (window.GALLERY || []).map(p => makeEntry(p, true));
+  const importPictures = () => Store.imports().map(p => makeEntry({ id: p.id, title: p.title, src: p.dataUrl, thumb: p.dataUrl }, false));
 
   // -------------------------------------------------------------- gallery
   function renderGallery() {
     grid.innerHTML = '';
     $('#galHints').textContent = Store.hints();
+    for (const b of diffEl.querySelectorAll('button')) b.classList.toggle('on', b.dataset.difficulty === difficulty);
 
     const add = document.createElement('div');
     add.className = 'card add';
@@ -100,7 +100,7 @@
     add.addEventListener('click', () => fileInput.click());
     grid.appendChild(add);
 
-    for (const entry of [...importEntries(), ...builtinEntries()]) {
+    for (const entry of [...importPictures(), ...galleryPictures()]) {
       const meta = Store.meta(entry.id);
       const thumb = Store.thumb(entry.id);
       const card = document.createElement('div');
@@ -110,17 +110,17 @@
       const img = document.createElement('img');
       img.alt = entry.title;
       img.loading = 'lazy';
+      img.decoding = 'async';
       if (thumb) img.src = thumb;
-      else { img.src = entry.preview(); img.className = 'sketch'; }
+      else { img.src = entry.thumb; img.className = 'sketch'; }
       const th = document.createElement('div');
       th.className = 'thumb';
       th.appendChild(img);
       if (meta.done) th.insertAdjacentHTML('beforeend', '<span class="badge">✓</span>');
-      else if (!thumb) th.insertAdjacentHTML('beforeend', '<span class="badge new">New</span>');
       card.appendChild(th);
       const m = document.createElement('div');
       m.className = 'meta';
-      m.innerHTML = `<span class="title"></span><span class="pct">${meta.pct}%</span>`;
+      m.innerHTML = `<span class="title"></span><span class="pct">${meta.pct ? meta.pct + '%' : ''}</span>`;
       m.querySelector('.title').textContent = entry.title;
       card.appendChild(m);
       const bar = document.createElement('div');
@@ -145,8 +145,9 @@
   function cardMenu(entry, meta) {
     if (!entry.builtin) {
       if (confirm(`Delete “${entry.title}”?`)) {
-        Store.saveImports(Store.imports().filter(i => i.id !== entry.id));
-        Store.reset(entry.id);
+        const baseId = entry.id.split('@')[0];
+        Store.saveImports(Store.imports().filter(i => i.id !== baseId));
+        for (const d of Object.keys(DIFFICULTY)) Store.reset(baseId + '@' + d);
         renderGallery();
       }
       return;
@@ -164,7 +165,9 @@
     gameEl.classList.add('active');
     game.open(entry).catch(err => {
       console.error(err);
-      toast('Sorry, that picture could not be prepared');
+      toast(location.protocol === 'file:'
+        ? 'Pictures need a web server – see the README'
+        : 'Sorry, that picture could not be prepared');
       showGallery();
     });
   }
@@ -176,6 +179,14 @@
     renderGallery();
   }
 
+  diffEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-difficulty]');
+    if (!b || b.dataset.difficulty === difficulty) return;
+    difficulty = b.dataset.difficulty;
+    Store.set('difficulty', difficulty);
+    renderGallery();
+  });
+
   // --------------------------------------------------------------- import
   let pendingImport = null;
   fileInput.addEventListener('change', async () => {
@@ -185,10 +196,11 @@
     const url = URL.createObjectURL(file);
     try {
       const img = await loadImage(url);
-      const c = scaledCanvas(img, 1000);
+      const c = canvasAt(img, MAX_IMPORT_SIDE / longSide(img));
       pendingImport = { dataUrl: c.toDataURL('image/jpeg', 0.86), name: file.name.replace(/\.[^.]+$/, '') };
       $('#importPreview').src = pendingImport.dataUrl;
       $('#importTitle').value = pendingImport.name.slice(0, 40) || 'My photo';
+      $('#importDiff').textContent = DIFFICULTY[difficulty].label;
       importDialog.classList.add('show');
     } catch (e) {
       toast('That file could not be opened as an image');
@@ -203,12 +215,10 @@
       pendingImport = null;
       return;
     }
-    const btn = e.target.closest('[data-difficulty]');
-    if (!btn || !pendingImport) return;
+    if (!e.target.closest('[data-start]') || !pendingImport) return;
     const imp = {
       id: 'imp-' + Date.now().toString(36),
       title: $('#importTitle').value.trim() || 'My photo',
-      difficulty: btn.dataset.difficulty,
       dataUrl: pendingImport.dataUrl,
     };
     const list = Store.imports();
@@ -219,8 +229,7 @@
     }
     importDialog.classList.remove('show');
     pendingImport = null;
-    const entry = importEntries().find(e => e.id === imp.id);
-    openGame(entry);
+    openGame(importPictures()[0]);
   });
 
   // keep the page itself from zooming/scrolling on iPad
