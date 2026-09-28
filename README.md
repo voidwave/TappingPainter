@@ -45,12 +45,31 @@ re-running cleans up its copies.
   and areas each picture is cut into. Every area is big enough to hold a readable
   number. Progress is kept separately for each level.
 - **New from photo** turns any picture on your device into a puzzle.
+- Painted tiles fade out in a very soft dither towards tiles you haven't done
+  yet. Edges between painted tiles stay solid, so the picture knits together
+  as you go.
+
+## Tuning the dither effect
+
+Open the game with `?tune` on the end of the address
+(https://voidwave.github.io/TappingPainter/?tune). A panel appears on the
+painting screen:
+
+- a one-tap **ON/OFF** switch to compare the painting with and without the effect
+- the pattern (Bayer or noise), fade width, edge strength, dot size and gap colour
+- **Paint 25%**, which paints a random quarter of the picture so you can judge the look quickly
+- **Copy**, which copies your settings so you can send them over
+
+Tune mode is a sandbox: it never saves painting progress. The settings you
+choose are kept on that device and also apply to normal play there. The
+built-in defaults are in `DITHER_DEFAULTS` in `js/dither.js`.
 
 ## Code layout
 
 | File | Purpose |
 | --- | --- |
 | `js/processor.js` | Turns an image into a puzzle. A painterly Kuwahara filter smooths it, k-means in Lab colour space picks the palette, small or thin areas merge into their neighbours, a distance transform places the numbers, and region borders are traced into shared, smoothed vector outlines. Runs in a Web Worker. |
+| `js/dither.js` | Soft edge dithering: distance from each painted pixel to the nearest unpainted tile becomes an ordered-dither fade, updated incrementally around each tap |
 | `js/game.js` | Painting screen: vector rendering, pan/zoom, taps, reveal animation, hints, replay |
 | `js/app.js` | Gallery, detail levels, photo import, screen switching |
 | `js/gallery-data.js` | Generated picture list (see *Adding pictures*) |

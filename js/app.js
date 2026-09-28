@@ -232,6 +232,76 @@
     openGame(importPictures()[0]);
   });
 
+  // ------------------------------------------------ tune mode (?tune)
+  // A sandbox for judging the edge-dither effect: live settings, instant
+  // on/off comparison, and no progress is saved while it's open.
+  if (/[?&]tune\b/.test(location.search)) {
+    game.sandbox = true;
+    document.body.classList.add('tuning');
+    const panel = document.createElement('div');
+    panel.className = 'tune-panel';
+    panel.innerHTML = `
+      <div class="tune-head"><b>Dither tuning</b><button class="tune-min" aria-label="Collapse">–</button></div>
+      <div class="tune-body">
+        <button class="btn primary tune-toggle"></button>
+        <label>Pattern
+          <span class="tune-seg"><button data-pattern="bayer">Bayer</button><button data-pattern="noise">Noise</button></span></label>
+        <label>Fade width <output data-for="band"></output><input type="range" data-key="band" min="3" max="40" step="1"></label>
+        <label>Edge strength <output data-for="minAlpha"></output><input type="range" data-key="minAlpha" min="0" max="0.9" step="0.05"></label>
+        <label>Dot size <output data-for="dot"></output><input type="range" data-key="dot" min="1" max="5" step="1"></label>
+        <label>Gaps: pale ↔ paper <output data-for="gap"></output><input type="range" data-key="gap" min="0.3" max="1" step="0.05"></label>
+        <div class="tune-row">
+          <button class="btn" data-act="paint">Paint 25%</button>
+          <button class="btn" data-act="reset">Defaults</button>
+          <button class="btn" data-act="copy">Copy</button>
+        </div>
+        <p class="tune-note">Sandbox: progress isn’t saved here. Settings are kept on this device.</p>
+      </div>`;
+    gameEl.appendChild(panel);
+    let cur = ditherSettings();
+    const fmt = (k, v) => k === 'minAlpha' ? Math.round((1 - v) * 100) + '%' : k === 'gap' ? Math.round(v * 100) + '%' : String(v);
+    const sync = () => {
+      panel.querySelector('.tune-toggle').textContent = cur.enabled ? 'Effect: ON (tap for OFF)' : 'Effect: OFF (tap for ON)';
+      panel.querySelector('.tune-toggle').classList.toggle('primary', cur.enabled);
+      for (const b of panel.querySelectorAll('[data-pattern]')) b.classList.toggle('on', b.dataset.pattern === cur.pattern);
+      for (const i of panel.querySelectorAll('input[data-key]')) {
+        i.value = cur[i.dataset.key];
+        panel.querySelector(`output[data-for="${i.dataset.key}"]`).textContent = fmt(i.dataset.key, cur[i.dataset.key]);
+      }
+    };
+    let pending = 0;
+    const apply = () => {
+      Store.set('dither', cur);
+      sync();
+      cancelAnimationFrame(pending);
+      pending = requestAnimationFrame(() => { if (game.puzzle) game.rebuildLayer(); });
+    };
+    panel.addEventListener('input', e => {
+      const k = e.target.dataset.key;
+      if (!k) return;
+      cur[k] = parseFloat(e.target.value);
+      apply();
+    });
+    panel.addEventListener('click', e => {
+      const t = e.target;
+      if (t.closest('.tune-min')) { panel.classList.toggle('min'); return; }
+      if (t.closest('.tune-toggle')) { cur.enabled = !cur.enabled; apply(); return; }
+      const pat = t.closest('[data-pattern]');
+      if (pat) { cur.pattern = pat.dataset.pattern; apply(); return; }
+      const act = t.closest('[data-act]');
+      if (!act) return;
+      if (act.dataset.act === 'paint') game.paintRandom(0.25);
+      if (act.dataset.act === 'reset') { cur = Object.assign({}, DITHER_DEFAULTS); apply(); }
+      if (act.dataset.act === 'copy') {
+        const text = JSON.stringify(cur);
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+          .then(() => toast('Settings copied'), () => prompt('Copy these settings:', text));
+      }
+    });
+    sync();
+    toast('Tune mode: progress is not saved');
+  }
+
   // keep the page itself from zooming/scrolling on iPad
   document.addEventListener('gesturestart', e => e.preventDefault());
   document.addEventListener('dblclick', e => e.preventDefault());

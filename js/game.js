@@ -122,10 +122,9 @@ class Game {
     this.layer = document.createElement('canvas');
     this.layer.width = hi.width; this.layer.height = hi.height;
     this.layerCtx = this.layer.getContext('2d');
-    this.pattern = this.layerCtx.createPattern(hi, 'no-repeat');
-    this.clearLayer();
-    if (this.isComplete()) this.layerCtx.drawImage(hi, 0, 0);
-    else for (const r of this.order) this.paintRegion(r);
+    this.solidPattern = this.layerCtx.createPattern(hi, 'no-repeat');
+    this.ditherDirty = null;
+    this.rebuildLayer();
 
     this.selected = this.nextColor(-1);
     this.buildPalette();
@@ -152,6 +151,61 @@ class Game {
     }
     this.paths[r] = p;
     return p;
+  }
+
+  // Painted regions are filled from either the plain picture or its
+  // edge-dithered version (see dither.js)
+  rebuildLayer() {
+    const s = ditherSettings();
+    this.dither = s.enabled && !this.isComplete()
+      ? new EdgeDither(this.puzzle, this.hi, this.painted, s) : null;
+    if (this.dither) {
+      this.dither.computeDistance();
+      this.dither.render(0, 0, this.w, this.h);
+      this.pattern = this.layerCtx.createPattern(this.dither.canvas, 'no-repeat');
+    } else {
+      this.pattern = this.solidPattern;
+    }
+    this.ditherDirty = null;
+    this.clearLayer();
+    if (this.isComplete()) this.layerCtx.drawImage(this.hi, 0, 0);
+    else for (const r of this.order) this.paintRegion(r);
+    this.draw();
+  }
+
+  // A newly painted region changes the fade of every painted pixel near it
+  markDitherDirty(r) {
+    if (!this.dither) return;
+    const bb = this.puzzle.regionBBox, o = r * 4, m = this.dither.s.band + 3;
+    const rect = [bb[o] - m, bb[o + 1] - m, bb[o + 2] + 1 + m, bb[o + 3] + 1 + m];
+    const d = this.ditherDirty;
+    this.ditherDirty = d
+      ? [Math.min(d[0], rect[0]), Math.min(d[1], rect[1]), Math.max(d[2], rect[2]), Math.max(d[3], rect[3])]
+      : rect;
+  }
+
+  flushDither() {
+    const [x0, y0, x1, y1] = this.ditherDirty;
+    this.ditherDirty = null;
+    const d = this.dither, P = this.puzzle, bb = P.regionBBox, K = this.K;
+    d.computeDistance(x0, y0, x1, y1);
+    d.render(x0, y0, x1, y1);
+    this.pattern = this.layerCtx.createPattern(d.canvas, 'no-repeat');
+    // repaint the settled regions inside the rectangle; animating ones redraw themselves
+    const busy = new Set(this.anims.map(a => a.r));
+    const c = this.layerCtx;
+    c.save();
+    c.beginPath();
+    c.rect(x0 * K, y0 * K, (x1 - x0) * K, (y1 - y0) * K);
+    c.clip();
+    c.fillStyle = '#ffffff';
+    c.fillRect(x0 * K, y0 * K, (x1 - x0) * K, (y1 - y0) * K);
+    for (const r of this.order) {
+      const o = r * 4;
+      if (busy.has(r) || bb[o + 2] + 1 < x0 || bb[o] > x1 || bb[o + 3] + 1 < y0 || bb[o + 1] > y1) continue;
+      this.paintRegion(r);
+    }
+    c.restore();
   }
 
   clearLayer() {
@@ -307,6 +361,7 @@ class Game {
   // advances animations; returns true while anything is still moving
   step(now) {
     let active = false;
+    if (this.ditherDirty && this.dither) this.flushDither();
     if (this.viewAnim) {
       const a = this.viewAnim;
       const t = Math.min(1, (now - a.start) / a.dur);
@@ -540,6 +595,7 @@ class Game {
     const P = this.puzzle, bb = P.regionBBox, o = r * 4;
     this.painted[r] = 1;
     this.order.push(r);
+    this.markDitherDirty(r);
     const col = P.regionColor[r];
     this.colorDone[col]++;
     const far = Math.max(
@@ -667,7 +723,7 @@ class Game {
   }
 
   save(withThumb) {
-    if (!this.puzzle || !this.entry) return;
+    if (!this.puzzle || !this.entry || this.sandbox) return;
     clearTimeout(this.saveTimer);
     const P = this.puzzle, L = P.regionLabel, w = this.w;
     const pts = this.order.map(r => Math.floor(L[r * 3 + 1]) * w + Math.floor(L[r * 3]));
@@ -703,10 +759,32 @@ class Game {
     this.doneEl.classList.remove('show');
   }
 
+  // ------------------------------------------------------------ tuning aids
+  // Paint a random share of the picture instantly (tune mode only)
+  paintRandom(share) {
+    if (!this.puzzle) return;
+    const P = this.puzzle, todo = [];
+    for (let r = 0; r < P.regionCount; r++) if (!this.painted[r]) todo.push(r);
+    let n = Math.min(todo.length - 1, Math.round(P.regionCount * share));
+    while (n-- > 0) {
+      const i = Math.floor(Math.random() * todo.length);
+      const r = todo.splice(i, 1)[0];
+      this.painted[r] = 1;
+      this.order.push(r);
+      this.colorDone[P.regionColor[r]]++;
+    }
+    for (let c = 0; c < P.palette.length; c++) this.updateSwatch(c);
+    if (this.selected >= 0 && this.colorDone[this.selected] >= this.colorTotal[this.selected]) this.select(this.nextColor(this.selected));
+    this.updateProgress();
+    this.rebuildLayer();
+  }
+
   // ----------------------------------------------------------------- finish
   finish() {
     // swap in the whole picture: seamless, with every tiny detail
     this.anims = [];
+    this.dither = null;
+    this.pattern = this.solidPattern;
     this.layerCtx.drawImage(this.hi, 0, 0);
     this.save(true);
     Store.setHints(Store.hints() + 3);
@@ -753,6 +831,7 @@ class Game {
     if (!this.puzzle) return;
     this.doneEl.classList.remove('show');
     this.petals = [];
+    this.pattern = this.solidPattern;
     this.clearLayer();
     const total = this.order.length;
     this.timelapse = { i: 0, start: performance.now(), dur: Math.min(9000, Math.max(3000, total * 30)) };

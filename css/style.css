@@ -446,3 +446,33 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .swatch { --size: 64px; }
   .swatch .dot { font-size: 21px; }
 }
+
+/* ------------------------------------------------------ tune mode panel */
+.tune-panel {
+  position: absolute;
+  top: calc(66px + var(--safe-top));
+  right: 12px;
+  width: min(300px, calc(100% - 24px));
+  background: rgba(33, 31, 40, .94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  z-index: 6;
+  font-size: 14px;
+}
+.tune-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px 16px; }
+.tune-min { border: none; background: var(--panel-2); width: 32px; height: 32px; border-radius: 50%; font-size: 18px; }
+.tune-panel.min .tune-body { display: none; }
+.tune-body { display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 16px; }
+.tune-body label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.tune-body output { float: right; color: var(--text); font-weight: 600; margin-left: auto; }
+.tune-body label { position: relative; }
+.tune-body label > output { position: absolute; right: 0; top: 0; }
+.tune-body input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+.tune-seg { display: inline-flex; background: var(--panel-2); border-radius: 999px; padding: 3px; align-self: flex-start; }
+.tune-seg button { border: none; background: none; color: var(--muted); padding: 6px 14px; border-radius: 999px; font-weight: 600; }
+.tune-seg button.on { background: var(--accent); color: #2b2230; }
+.tune-row { display: flex; gap: 6px; }
+.tune-row .btn { flex: 1; padding: 10px 6px; font-size: 13px; }
+.tune-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
