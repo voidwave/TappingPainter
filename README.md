@@ -75,3 +75,20 @@ built-in defaults are in `DITHER_DEFAULTS` in `js/dither.js`.
 | `js/gallery-data.js` | Generated picture list (see *Adding pictures*) |
 | `js/storage.js`, `js/audio.js` | localStorage persistence and generated sound effects |
 | `tools/build_gallery.py` | Builds web copies, thumbnails and the picture list from `images/` |
+
+# Brick Jam
+
+A second game lives in [`brickjam/`](brickjam/), published at
+**https://voidwave.github.io/TappingPainter/brickjam/**. It's a sliding-brick
+puzzle in the style of Color Block Jam.
+
+- Drag a brick to slide it. When it touches a gate of its own colour that is
+  at least as wide as the brick, it slides out. Clear every brick to win.
+- There's no time limit. The clock only shows how long you took.
+- ❄ Frozen bricks show a number and thaw once that many other bricks have left.
+- Bricks with arrows only slide that way, and wooden blocks never move.
+- Boosters: the hammer smashes one brick, and the vacuum removes every brick
+  of one colour. You earn more every few levels.
+- Levels are generated from the level number, so they never run out and every
+  player gets the same level 37. Each one is built backwards from an empty
+  board, so it can always be solved. `brickjam/?level=40` jumps to a level.
