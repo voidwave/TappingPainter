@@ -1,0 +1,12 @@
+{
+  "name": "Brick Jam",
+  "short_name": "Brick Jam",
+  "description": "Slide the bricks out through the gates of their own colour.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3d3cc",
+  "theme_color": "#f3d3cc",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
